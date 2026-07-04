@@ -44,6 +44,7 @@ Delta y ≈ beta(base_x, organization, product_family)^T delta_x
 - [Implementation brief](docs/implementation-brief.md): Codex向けの実装要件
 - [Model comparison plan](docs/model-comparison.md): 比較対象モデルと評価指標
 - [Decision UI spec](docs/ui-spec.md): 意思決定UIで見せたい情報
+- [Research map](docs/research-map.md): 近い既存手法との対応関係
 - [Codex task prompt](docs/codex-task.md): Codexに投げるためのタスク文
 
 ## MVP
