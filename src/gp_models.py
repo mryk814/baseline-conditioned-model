@@ -57,6 +57,11 @@ class GPAbsoluteModel:
             pred_delta_y=pred_new - pred_base,
             pred_y_new=pred_new,
             std_delta_y=np.sqrt(np.square(std_base) + np.square(std_new)),
+            details={
+                "pred_y_base": pred_base,
+                "std_y_base": std_base,
+                "std_y_new": std_new,
+            },
         )
 
 

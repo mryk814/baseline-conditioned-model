@@ -10,6 +10,8 @@ WARNING_MESSAGES = {
     "LOW_DIRECTION_SUPPORT": "similar historical change directions are sparse",
     "HIGH_ORG_BORROWING": "the estimate borrows substantial evidence from other organizations",
     "HIGH_MODEL_UNCERTAINTY": "model uncertainty is elevated",
+    "EXTRAPOLATION_RISK": "the query is outside well-supported historical regions",
+    "CONFLICTING_LOCAL_EVIDENCE": "nearby evidence has conflicting improvement directions",
 }
 
 
@@ -31,7 +33,8 @@ def build_prediction_explanation(model: object, query: pd.Series) -> TextExplana
             f"Largest local contributions are {contribution_text}. "
             f"It uses {details.effective_sample_size:.1f} effective nearby examples, "
             f"with {details.same_organization_weight_ratio:.0%} same-organization support. "
-            f"Direction coverage is {details.direction_coverage:.0%}; {warning_text}."
+            f"Direction coverage is {details.direction_coverage:.0%}; "
+            f"average base distance is {details.average_base_distance:.2f}; {warning_text}."
         )
         return TextExplanation(text=text, warnings=details.warnings, details=details)
 

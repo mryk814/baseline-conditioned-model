@@ -44,3 +44,31 @@ def plot_local_contributions(contributions: dict[str, float], output_path: str |
     if output_path:
         fig.savefig(output_path, dpi=160)
     return fig
+
+
+def plot_uncertainty_vs_error(results: pd.DataFrame, output_path: str | Path | None = None):
+    frame = results.copy()
+    frame["absolute_error"] = (frame["true_delta_y"] - frame["pred_delta_y"]).abs()
+    fig, ax = plt.subplots(figsize=(6, 4))
+    ax.scatter(frame["std_delta_y"], frame["absolute_error"], alpha=0.7, color="#7d6b91")
+    ax.set_xlabel("Estimated std_delta_y")
+    ax.set_ylabel("Absolute error")
+    ax.set_title("Uncertainty vs absolute error")
+    fig.tight_layout()
+    if output_path:
+        fig.savefig(output_path, dpi=160)
+    return fig
+
+
+def plot_candidate_ranking(scored_candidates: pd.DataFrame, output_path: str | Path | None = None):
+    frame = scored_candidates.sort_values("risk_adjusted_score", ascending=True).tail(12)
+    fig, ax = plt.subplots(figsize=(7, 4))
+    ax.barh(frame["candidate_name"], frame["risk_adjusted_score"], color="#3f8f68")
+    ax.scatter(frame["true_delta_y"], frame["candidate_name"], color="#202020", label="true delta_y", zorder=3)
+    ax.set_xlabel("Risk-adjusted score")
+    ax.set_title("Candidate ranking comparison")
+    ax.legend()
+    fig.tight_layout()
+    if output_path:
+        fig.savefig(output_path, dpi=160)
+    return fig

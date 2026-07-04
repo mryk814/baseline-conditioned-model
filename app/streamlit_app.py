@@ -10,14 +10,14 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.evaluation import candidate_ranking_metrics, evaluate_models, split_random
+from src.evaluation import candidate_ranking_metrics, evaluate_models, score_candidates, split_random, split_suite
 from src.explanation import build_prediction_explanation
 from src.features import CONTINUOUS_FEATURES, DELTA_FEATURES
 from src.generate_data import generate_candidate_actions, generate_material_pairs, save_demo_data
 from src.gp_models import GPAbsoluteModel, GPDeltaModel
 from src.local_linear import LocalLinearRegressor, PartialPoolingLocalLinearRegressor
 from src.models import GlobalAbsoluteLinearModel, GlobalDeltaLinearModel
-from src.plotting import plot_local_contributions, plot_model_comparison
+from src.plotting import plot_candidate_ranking, plot_local_contributions, plot_model_comparison, plot_uncertainty_vs_error
 
 
 @st.cache_data
@@ -40,7 +40,8 @@ def train_models(data: pd.DataFrame):
         "GP absolute": GPAbsoluteModel(max_train_size=260).fit(train),
         "GP delta": GPDeltaModel(max_train_size=260).fit(train),
     }
-    return train, test, models, evaluate_models(models, test)
+    split_counts = {name: {"train": len(parts[0]), "test": len(parts[1])} for name, parts in split_suite(data, random_state=11).items()}
+    return train, test, models, evaluate_models(models, test), split_counts
 
 
 def row_for_manual_delta(base_row: pd.Series, deltas: dict[str, float]) -> pd.DataFrame:
@@ -57,7 +58,7 @@ st.set_page_config(page_title="Baseline-Conditioned Model", layout="wide")
 st.title("Baseline-Conditioned Material Change Demo")
 
 pairs, candidates = load_data()
-train, test, models, metrics = train_models(pairs)
+train, test, models, metrics, split_counts = train_models(pairs)
 
 left, right = st.columns([0.36, 0.64])
 
@@ -105,24 +106,43 @@ with right:
 
     if hasattr(explanation.details, "contributions"):
         st.pyplot(plot_local_contributions(explanation.details.contributions))
+        support_cols = st.columns(5)
+        support_cols[0].metric("Effective sample size", f"{explanation.details.effective_sample_size:.1f}")
+        support_cols[1].metric("Nearest examples", f"{len(explanation.details.nearest_examples)}")
+        support_cols[2].metric("Same-org support", f"{explanation.details.same_organization_weight_ratio:.0%}")
+        support_cols[3].metric("Avg base distance", f"{explanation.details.average_base_distance:.2f}")
+        support_cols[4].metric("Direction support", f"{explanation.details.direction_coverage:.0%}")
         st.subheader("Nearest evidence")
         st.dataframe(explanation.details.nearest_examples)
 
     st.subheader("Model comparison")
     st.pyplot(plot_model_comparison(metrics))
     st.dataframe(pd.DataFrame(metrics).T.sort_values("rmse_delta_y"))
+    st.caption(f"Split suite sizes: {split_counts}")
 
     st.subheader("Candidate comparison")
     scored = candidates[candidates["base_id"] == base_id].copy()
     if scored.empty:
         scored = candidates.head(8).copy()
-    scored_prediction = models["Local partial pooling"].predict(scored)
-    scored["pred_delta_y"] = scored_prediction.pred_delta_y
-    scored["std_delta_y"] = scored_prediction.std_delta_y
-    scored["risk_adjusted_score"] = scored["pred_delta_y"] - 0.75 * scored["std_delta_y"]
+    scored = score_candidates(models["Local partial pooling"], scored)
     st.caption(f"Ranking metrics: {candidate_ranking_metrics(models['Local partial pooling'], candidates)}")
+    st.pyplot(plot_candidate_ranking(scored))
+    uncertainty_frame = scored.rename(columns={"true_delta_y": "true_delta_y"})
+    st.pyplot(plot_uncertainty_vs_error(uncertainty_frame))
     st.dataframe(
         scored[
-            ["candidate_name", "pred_delta_y", "std_delta_y", "risk_adjusted_score", "true_delta_y", "is_ood", "is_sparse_direction", *DELTA_FEATURES]
+            [
+                "candidate_name",
+                "pred_delta_y",
+                "std_delta_y",
+                "risk_adjusted_score",
+                "same_org_support",
+                "direction_support",
+                "warning_count",
+                "true_delta_y",
+                "is_ood",
+                "is_sparse_direction",
+                *DELTA_FEATURES,
+            ]
         ].sort_values("risk_adjusted_score", ascending=False)
     )
