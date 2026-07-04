@@ -58,6 +58,20 @@ Delta y ≈ beta(base_x, organization, product_family)^T delta_x
 
 評価は `delta_y` のRMSEだけでなく、候補ランキング、符号正解率、不確実性、適用可能領域の警告も見る方針です。
 
+## Running the demo
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m src.generate_data
+.\.venv\Scripts\python.exe -m pytest -q
+.\.venv\Scripts\streamlit.exe run app\streamlit_app.py
+```
+
+The Streamlit app trains the six MVP models, compares delta prediction metrics, shows local linear feature contributions, lists nearest evidence, and ranks candidate actions by risk-adjusted predicted improvement.
+
+Generated CSV files are written to `data/materials_pairs.csv` and `data/candidate_actions.csv`. They are ignored by git because they can be recreated deterministically.
+
 ## Reference policy
 
 技術調査では一次情報・公式ドキュメント・論文・公式実装を優先します。Qiita / Zenn は実装方針や根拠として使わない方針です。
