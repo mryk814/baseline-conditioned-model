@@ -20,6 +20,8 @@ class LocalExplanation:
     effective_sample_size: float
     direction_coverage: float
     same_organization_weight_ratio: float
+    average_base_distance: float
+    average_delta_similarity: float
     warnings: list[str] = field(default_factory=list)
 
 
@@ -51,7 +53,7 @@ class LocalLinearRegressor:
     def explain_one(self, query: pd.Series) -> LocalExplanation:
         return self._explain_with_frame(self.train_, query)
 
-    def _weights(self, frame: pd.DataFrame, query: pd.Series) -> tuple[np.ndarray, np.ndarray]:
+    def _weights(self, frame: pd.DataFrame, query: pd.Series) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         base_values = frame[self.base_features].to_numpy(dtype=float)
         query_base = query[self.base_features].to_numpy(dtype=float)
         base_scale = self.base_scale_.to_numpy(dtype=float)
@@ -75,10 +77,10 @@ class LocalLinearRegressor:
         context_similarity += 0.05 * (frame["equipment"].to_numpy() == query["equipment"])
 
         weights = base_similarity * direction_similarity * context_similarity
-        return weights, cosine
+        return weights, cosine, base_distance
 
     def _explain_with_frame(self, frame: pd.DataFrame, query: pd.Series) -> LocalExplanation:
-        weights, cosine = self._weights(frame, query)
+        weights, cosine, base_distance = self._weights(frame, query)
         order = np.argsort(weights)[::-1][: min(self.k_neighbors, len(frame))]
         local = frame.iloc[order].copy()
         local_weights = np.maximum(weights[order], 1e-8)
@@ -100,12 +102,16 @@ class LocalLinearRegressor:
         std = float(np.sqrt(max(residual_var, 1.0)) * np.sqrt(1.0 + 1.0 / max(ess, 1.0)))
         direction_coverage = float(np.average(np.clip(cosine[order], 0, 1), weights=local_weights))
         same_org_ratio = float(local_weights[local["organization"].to_numpy() == query["organization"]].sum() / max(weight_sum, 1e-9))
+        average_base_distance = float(np.average(base_distance[order], weights=local_weights))
+        average_delta_similarity = float(np.average(cosine[order], weights=local_weights))
 
         nearest = local[
             ["pair_id", "organization", "product_family", "delta_y", *self.delta_features]
         ].head(10).copy()
+        nearest = nearest.rename(columns={"delta_y": "observed_delta_y"})
         nearest["weight"] = local_weights[: len(nearest)]
         nearest["delta_similarity"] = cosine[order][: len(nearest)]
+        nearest["base_distance"] = base_distance[order][: len(nearest)]
 
         warnings = []
         if ess < 12:
@@ -116,6 +122,11 @@ class LocalLinearRegressor:
             warnings.append("HIGH_ORG_BORROWING")
         if std > 35:
             warnings.append("HIGH_MODEL_UNCERTAINTY")
+        if average_base_distance > 1.7 or bool(query.get("is_ood", False)) or bool(query.get("is_sparse_direction", False)):
+            warnings.append("EXTRAPOLATION_RISK")
+        weighted_positive = float(local_weights[y > 0].sum() / max(weight_sum, 1e-9))
+        if 0.35 < weighted_positive < 0.65 and abs(pred) < std:
+            warnings.append("CONFLICTING_LOCAL_EVIDENCE")
 
         coefficients = dict(zip(self.delta_features, beta[1:]))
         contributions = {feature: float(coefficients[feature] * query[feature]) for feature in self.delta_features}
@@ -129,6 +140,8 @@ class LocalLinearRegressor:
             effective_sample_size=ess,
             direction_coverage=direction_coverage,
             same_organization_weight_ratio=same_org_ratio,
+            average_base_distance=average_base_distance,
+            average_delta_similarity=average_delta_similarity,
             warnings=warnings,
         )
 

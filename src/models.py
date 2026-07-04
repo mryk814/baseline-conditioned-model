@@ -50,7 +50,16 @@ class GlobalAbsoluteLinearModel:
         new_pred = self.pipeline.predict(absolute_state_frame(rows, "new"))
         pred_delta = new_pred - base_pred
         std = np.full(len(rows), np.sqrt(2.0) * max(self.residual_std_, 1e-6))
-        return PredictionResult(pred_delta_y=pred_delta, pred_y_new=new_pred, std_delta_y=std)
+        return PredictionResult(
+            pred_delta_y=pred_delta,
+            pred_y_new=new_pred,
+            std_delta_y=std,
+            details={
+                "pred_y_base": base_pred,
+                "std_y_base": np.full(len(rows), max(self.residual_std_, 1e-6)),
+                "std_y_new": np.full(len(rows), max(self.residual_std_, 1e-6)),
+            },
+        )
 
 
 class GlobalDeltaLinearModel:
