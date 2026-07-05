@@ -27,7 +27,7 @@ from src.ui_text import (
 )
 
 
-st.set_page_config(page_title="Baseline-Conditioned Model", layout="wide")
+st.set_page_config(page_title="ベース条件つき材料変更予測", layout="wide")
 
 st.markdown(
     """
@@ -199,33 +199,33 @@ def row_for_manual_delta(base_row: pd.Series, deltas: dict[str, float]) -> pd.Da
 
 def base_summary_table(base_row: pd.Series) -> pd.DataFrame:
     rows = [
-        ("Organization", base_row["organization"]),
-        ("Equipment", base_row["equipment"]),
-        ("Product family", base_row["product_family"]),
-        ("Current strength", f"{base_row['y_base']:.1f} MPa"),
+        ("組織", base_row["organization"]),
+        ("設備", base_row["equipment"]),
+        ("製品ファミリ", base_row["product_family"]),
+        ("現在の強度", f"{base_row['y_base']:.1f} MPa"),
         ("C", f"{base_row['C']:.3f}"),
         ("Mn", f"{base_row['Mn']:.3f}"),
         ("Cr", f"{base_row['Cr']:.3f}"),
         ("Ni", f"{base_row['Ni']:.3f}"),
         ("Mo", f"{base_row['Mo']:.3f}"),
-        ("Tempering temp", f"{base_row['tempering_temp']:.1f}"),
-        ("Holding time", f"{base_row['holding_time']:.2f}"),
-        ("Cooling rate", f"{base_row['cooling_rate']:.2f}"),
+        ("焼戻し温度", f"{base_row['tempering_temp']:.1f}"),
+        ("保持時間", f"{base_row['holding_time']:.2f}"),
+        ("冷却速度", f"{base_row['cooling_rate']:.2f}"),
     ]
-    return pd.DataFrame(rows, columns=["Condition", "Value"])
+    return pd.DataFrame(rows, columns=["条件", "値"])
 
 
 def strongest_contribution(contributions: dict[str, float]) -> str:
     if not contributions:
         return "n/a"
     feature, value = max(contributions.items(), key=lambda item: abs(item[1]))
-    return feature.replace("delta_", "")
+    return display_feature(feature.replace("delta_", ""))
 
 
 def risk_badge_class(risk: str) -> str:
-    if risk == "Supported":
+    if risk == "根拠あり":
         return "badge-supported"
-    if risk == "High risk":
+    if risk == "高リスク":
         return "badge-risk"
     return "badge-review"
 
@@ -235,38 +235,90 @@ def metric_frame(metrics: dict[str, dict[str, float]]) -> pd.DataFrame:
     columns = {
         "rmse_delta_y": "RMSE",
         "mae_delta_y": "MAE",
-        "sign_accuracy": "Sign accuracy",
-        "interval_95_coverage": "95% coverage",
+        "sign_accuracy": "符号正解率",
+        "interval_95_coverage": "95%区間カバー率",
         "ood_detection_auroc": "OOD AUROC",
     }
     return frame[list(columns)].rename(columns=columns).sort_values("RMSE")
 
 
+MODEL_LABELS = {
+    "Global absolute linear": "全体・絶対値線形",
+    "Global delta linear": "全体・変化量線形",
+    "Local linear": "局所線形",
+    "Local partial pooling": "局所線形 + 部分プーリング",
+    "GP absolute": "GP・絶対値",
+    "GP delta": "GP・変化量",
+}
+
+FEATURE_LABELS = {
+    "C": "C",
+    "Mn": "Mn",
+    "Cr": "Cr",
+    "Ni": "Ni",
+    "Mo": "Mo",
+    "tempering_temp": "焼戻し温度",
+    "holding_time": "保持時間",
+    "cooling_rate": "冷却速度",
+}
+
+
+def selected_model_key(label: str) -> str:
+    inverse = {display: key for key, display in MODEL_LABELS.items()}
+    return inverse[label]
+
+
+def display_feature(feature: str) -> str:
+    return FEATURE_LABELS.get(feature, feature)
+
+
+def evidence_table(frame: pd.DataFrame) -> pd.DataFrame:
+    return frame.rename(
+        columns={
+            "pair_id": "事例ID",
+            "organization": "組織",
+            "product_family": "製品ファミリ",
+            "observed_delta_y": "実測変化",
+            "delta_C": "ΔC",
+            "delta_Mn": "ΔMn",
+            "delta_Cr": "ΔCr",
+            "delta_Ni": "ΔNi",
+            "delta_Mo": "ΔMo",
+            "delta_tempering_temp": "Δ焼戻し温度",
+            "delta_holding_time": "Δ保持時間",
+            "delta_cooling_rate": "Δ冷却速度",
+            "weight": "重み",
+            "delta_similarity": "方向類似度",
+            "base_distance": "ベース距離",
+        }
+    )
+
+
 pairs, candidates = load_data()
 train, test, models, metrics, split_counts = train_models(pairs)
 
-st.title("Material Change Decision Workbench")
+st.title("材料変更の意思決定ワークベンチ")
 st.markdown(
-    "<div class='section-note'>Baseline condition, proposed perturbation, expected strength change, and the evidence behind the recommendation.</div>",
+    "<div class='section-note'>ベース条件から少し条件を振ったとき、強度がどう変わりそうかと、その予測を支える根拠を確認します。</div>",
     unsafe_allow_html=True,
 )
 
 control_col, decision_col = st.columns([0.34, 0.66], gap="large")
 
 with control_col:
-    st.subheader("1. Define the decision")
-    base_id = st.selectbox("Baseline", pairs["base_id"].drop_duplicates().head(80))
+    st.subheader("1. ベース条件を選ぶ")
+    base_id = st.selectbox("ベース条件", pairs["base_id"].drop_duplicates().head(80))
     base_row = pairs[pairs["base_id"] == base_id].iloc[0]
 
     st.dataframe(base_summary_table(base_row), hide_index=True, width="stretch")
 
-    st.subheader("2. Set the change")
-    source = st.radio("Change source", ["Manual deltas", "Candidate action"], horizontal=True)
-    if source == "Candidate action":
+    st.subheader("2. 変更量を決める")
+    source = st.radio("入力方法", ["手入力", "候補から選ぶ"], horizontal=True)
+    if source == "候補から選ぶ":
         base_candidates = candidates[candidates["base_id"] == base_id]
         if base_candidates.empty:
             base_candidates = candidates.head(6)
-        candidate_name = st.selectbox("Candidate", base_candidates["candidate_name"])
+        candidate_name = st.selectbox("候補", base_candidates["candidate_name"])
         query = base_candidates[base_candidates["candidate_name"] == candidate_name].head(1)
     else:
         deltas = {}
@@ -281,10 +333,21 @@ with control_col:
                 value = 0.08
             target_cols = process_cols if feature in {"tempering_temp", "holding_time", "cooling_rate"} else composition_cols
             with target_cols[index % 2]:
-                deltas[f"delta_{feature}"] = st.number_input(feature, value=value, step=step, format="%.4f")
+                deltas[f"delta_{feature}"] = st.number_input(
+                    display_feature(feature),
+                    value=value,
+                    step=step,
+                    format="%.4f",
+                    key=f"delta_{feature}",
+                )
         query = row_for_manual_delta(base_row, deltas)
 
-    model_name = st.selectbox("Prediction model", list(models), index=list(models).index("Local partial pooling"))
+    model_label = st.selectbox(
+        "予測モデル",
+        [MODEL_LABELS[key] for key in models],
+        index=list(models).index("Local partial pooling"),
+    )
+    model_name = selected_model_key(model_label)
 
 with decision_col:
     model = models[model_name]
@@ -305,13 +368,13 @@ with decision_col:
     st.markdown(
         f"""
         <div class="decision-band">
-          <div class="decision-kicker">Decision summary</div>
-          <div class="decision-title">{prediction.pred_delta_y[0]:+.1f} MPa expected strength change</div>
+          <div class="decision-kicker">判断サマリー</div>
+          <div class="decision-title">強度変化の予測: {prediction.pred_delta_y[0]:+.1f} MPa</div>
           <p class="decision-copy">{summary}</p>
           <div class="badge-row">
             <span class="badge {risk_badge_class(risk)}">{risk}</span>
-            <span class="badge badge-review">Confidence: {confidence}</span>
-            <span class="badge badge-supported">Driver: {strongest_driver}</span>
+            <span class="badge badge-review">信頼度: {confidence}</span>
+            <span class="badge badge-supported">主な要因: {strongest_driver}</span>
           </div>
         </div>
         """,
@@ -319,11 +382,11 @@ with decision_col:
     )
 
     stat_items = [
-        ("Expected change", f"{prediction.pred_delta_y[0]:+.1f} MPa"),
-        ("Uncertainty", f"+/- {prediction.std_delta_y[0]:.1f}"),
-        ("Evidence", f"{details.effective_sample_size:.1f} ESS"),
-        ("Same-org", f"{details.same_organization_weight_ratio:.0%}"),
-        ("Direction", f"{details.direction_coverage:.0%}"),
+        ("期待変化", f"{prediction.pred_delta_y[0]:+.1f} MPa"),
+        ("不確実性", f"+/- {prediction.std_delta_y[0]:.1f}"),
+        ("近傍根拠", f"{details.effective_sample_size:.1f} ESS"),
+        ("同組織の根拠", f"{details.same_organization_weight_ratio:.0%}"),
+        ("方向サポート", f"{details.direction_coverage:.0%}"),
     ]
     st.markdown(
         "<div class='stat-grid'>"
@@ -339,43 +402,43 @@ with decision_col:
     if warning_messages:
         st.markdown("<div class='warning-list'>" + "".join(f"<div class='warning-item'>{message}</div>" for message in warning_messages) + "</div>", unsafe_allow_html=True)
     else:
-        st.success("Evidence support looks solid for this proposed change.")
+        st.success("この変更は、近い過去事例に比較的よく支えられています。")
 
     st.pyplot(plot_local_contributions(details.contributions), width="stretch")
 
 st.divider()
 
-evidence_tab, candidates_tab, diagnostics_tab = st.tabs(["Evidence", "Candidate ranking", "Model diagnostics"])
+evidence_tab, candidates_tab, diagnostics_tab = st.tabs(["根拠", "候補ランキング", "モデル診断"])
 
 with evidence_tab:
-    st.subheader("Evidence behind the estimate")
+    st.subheader("予測を支える近傍事例")
     support_cols = st.columns(4)
-    support_cols[0].metric("Nearest examples", f"{len(details.nearest_examples)}")
-    support_cols[1].metric("Average base distance", f"{details.average_base_distance:.2f}")
-    support_cols[2].metric("Average direction similarity", f"{details.average_delta_similarity:.2f}")
-    support_cols[3].metric("Estimated uncertainty", f"{details.std_delta_y:.1f}")
-    st.dataframe(details.nearest_examples, width="stretch", hide_index=True)
+    support_cols[0].metric("近傍事例数", f"{len(details.nearest_examples)}")
+    support_cols[1].metric("ベース距離", f"{details.average_base_distance:.2f}")
+    support_cols[2].metric("方向類似度", f"{details.average_delta_similarity:.2f}")
+    support_cols[3].metric("推定不確実性", f"{details.std_delta_y:.1f}")
+    st.dataframe(evidence_table(details.nearest_examples), width="stretch", hide_index=True)
 
 with candidates_tab:
-    st.subheader("Candidate ranking")
+    st.subheader("候補変更の比較")
     scored = candidates[candidates["base_id"] == base_id].copy()
     if scored.empty:
         scored = candidates.head(8).copy()
     scored = score_candidates(models["Local partial pooling"], scored)
     ranking_metrics = candidate_ranking_metrics(models["Local partial pooling"], candidates)
     rank_cols = st.columns(4)
-    rank_cols[0].metric("Top-1 regret", f"{ranking_metrics['top1_regret']:.1f}")
-    rank_cols[1].metric("Top-3 hit rate", f"{ranking_metrics['top3_hit_rate']:.0%}")
-    rank_cols[2].metric("Rank correlation", f"{ranking_metrics['spearman_rank_correlation']:.2f}")
-    rank_cols[3].metric("Score quality", f"{ranking_metrics['risk_adjusted_score_quality']:.2f}")
+    rank_cols[0].metric("Top-1後悔", f"{ranking_metrics['top1_regret']:.1f}")
+    rank_cols[1].metric("Top-3的中率", f"{ranking_metrics['top3_hit_rate']:.0%}")
+    rank_cols[2].metric("順位相関", f"{ranking_metrics['spearman_rank_correlation']:.2f}")
+    rank_cols[3].metric("スコア品質", f"{ranking_metrics['risk_adjusted_score_quality']:.2f}")
     st.pyplot(plot_candidate_ranking(scored), width="stretch")
     st.dataframe(format_candidate_table(scored.sort_values("risk_adjusted_score", ascending=False)), width="stretch", hide_index=True)
 
 with diagnostics_tab:
-    st.subheader("Model diagnostics")
+    st.subheader("モデル診断")
     st.pyplot(plot_model_comparison(metrics), width="stretch")
     st.dataframe(metric_frame(metrics), width="stretch")
     scored_for_error = scored.rename(columns={"true_delta_y": "true_delta_y"})
     st.pyplot(plot_uncertainty_vs_error(scored_for_error), width="stretch")
-    split_frame = pd.DataFrame(split_counts).T.reset_index().rename(columns={"index": "Split"})
+    split_frame = pd.DataFrame(split_counts).T.reset_index().rename(columns={"index": "分割", "train": "学習件数", "test": "評価件数"})
     st.dataframe(split_frame, width="stretch", hide_index=True)
