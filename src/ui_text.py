@@ -21,19 +21,19 @@ def format_warning_message(code: str) -> str:
 
 def confidence_label(std_delta_y: float, direction_support: float) -> str:
     if std_delta_y <= 12 and direction_support >= 0.7:
-        return "High"
+        return "高"
     if std_delta_y <= 22 and direction_support >= 0.45:
-        return "Medium"
-    return "Low"
+        return "中"
+    return "低"
 
 
 def risk_tone(warnings: Iterable[str]) -> str:
     warning_set = set(warnings)
     if {"EXTRAPOLATION_RISK", "HIGH_MODEL_UNCERTAINTY"} & warning_set:
-        return "High risk"
+        return "高リスク"
     if warning_set:
-        return "Needs review"
-    return "Supported"
+        return "要確認"
+    return "根拠あり"
 
 
 def top_decision_summary(
@@ -43,12 +43,11 @@ def top_decision_summary(
     risk: str,
     strongest_driver: str,
 ) -> str:
-    direction = "increase" if pred_delta_y >= 0 else "decrease"
+    direction = "上がる" if pred_delta_y >= 0 else "下がる"
     return (
-        f"Expected {direction}: {pred_delta_y:+.1f} MPa "
-        f"(uncertainty +/- {std_delta_y:.1f}). "
-        f"Confidence is {confidence}; risk status is {risk}. "
-        f"The largest local driver is {strongest_driver}."
+        f"この変更では強度が {pred_delta_y:+.1f} MPa {direction}見込みです。"
+        f"不確実性は +/- {std_delta_y:.1f}、信頼度は{confidence}、リスク判定は{risk}です。"
+        f"局所的に最も効いている要因は {strongest_driver} です。"
     )
 
 
@@ -62,14 +61,14 @@ def format_candidate_table(rows: pd.DataFrame | list[dict[str, object]]) -> pd.D
     frame = pd.DataFrame(rows).copy()
     table = pd.DataFrame(
         {
-            "Candidate": frame["candidate_name"],
-            "Expected change": frame["pred_delta_y"].map(lambda value: f"{value:+.1f} MPa"),
-            "Uncertainty": frame["std_delta_y"].map(lambda value: f"+/- {value:.1f}"),
-            "Risk-adjusted score": frame["risk_adjusted_score"].map(lambda value: f"{value:+.1f}"),
-            "Same-org evidence": frame["same_org_support"].map(format_percent),
-            "Direction support": frame["direction_support"].map(format_percent),
-            "Risk flags": frame["warning_count"].map(lambda value: f"{int(value)}"),
-            "Synthetic truth": frame["true_delta_y"].map(lambda value: f"{value:+.1f} MPa") if "true_delta_y" in frame else "-",
+            "候補": frame["candidate_name"],
+            "期待変化": frame["pred_delta_y"].map(lambda value: f"{value:+.1f} MPa"),
+            "不確実性": frame["std_delta_y"].map(lambda value: f"+/- {value:.1f}"),
+            "リスク調整後": frame["risk_adjusted_score"].map(lambda value: f"{value:+.1f}"),
+            "同組織の根拠": frame["same_org_support"].map(format_percent),
+            "方向サポート": frame["direction_support"].map(format_percent),
+            "リスク数": frame["warning_count"].map(lambda value: f"{int(value)}"),
+            "合成データ上の正解": frame["true_delta_y"].map(lambda value: f"{value:+.1f} MPa") if "true_delta_y" in frame else "-",
         }
     )
     return table
