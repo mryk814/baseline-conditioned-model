@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from html import escape
 from pathlib import Path
 import sys
 
@@ -19,9 +20,11 @@ from src.local_linear import LocalLinearRegressor, PartialPoolingLocalLinearRegr
 from src.models import GlobalAbsoluteLinearModel, GlobalDeltaLinearModel
 from src.plotting import plot_candidate_ranking, plot_local_contributions, plot_model_comparison, plot_uncertainty_vs_error
 from src.ui_text import (
+    best_model_label,
     confidence_label,
     format_candidate_table,
     format_warning_message,
+    model_comparison_table,
     risk_tone,
     top_decision_summary,
 )
@@ -150,12 +153,41 @@ st.markdown(
       line-height: 1.15;
       overflow-wrap: anywhere;
     }
+    .model-score-grid {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+    .model-score-grid .stat-value {
+      font-size: 1.05rem;
+      line-height: 1.3;
+    }
     @media (max-width: 1100px) {
       .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
     .muted-small {
       color: var(--muted);
       font-size: 0.82rem;
+    }
+    .tendency-list {
+      display: grid;
+      gap: 8px;
+    }
+    .tendency-item {
+      background: var(--surface-soft);
+      border: 1px solid var(--surface-line);
+      border-radius: 8px;
+      padding: 10px 12px;
+    }
+    .tendency-name {
+      color: var(--ink);
+      font-size: 0.92rem;
+      font-weight: 700;
+      line-height: 1.35;
+      margin-bottom: 3px;
+    }
+    .tendency-copy {
+      color: #d4dce8;
+      font-size: 0.84rem;
+      line-height: 1.45;
     }
     </style>
     """,
@@ -302,6 +334,55 @@ st.markdown(
     "<div class='section-note'>ベース条件から少し条件を振ったとき、強度がどう変わりそうかと、その予測を支える根拠を確認します。</div>",
     unsafe_allow_html=True,
 )
+
+st.subheader("モデルの優秀さと傾向")
+st.markdown(
+    "<div class='section-note'>合成評価データに対して、各モデルの誤差、改善/悪化方向の当たりやすさ、不確実性、外挿検知を横並びで見ます。</div>",
+    unsafe_allow_html=True,
+)
+model_score_items = [
+    ("最小誤差", best_model_label(metrics, MODEL_LABELS, "rmse_delta_y")),
+    ("方向正解トップ", best_model_label(metrics, MODEL_LABELS, "sign_accuracy", higher_is_better=True)),
+    ("95%カバー率トップ", best_model_label(metrics, MODEL_LABELS, "interval_95_coverage", higher_is_better=True)),
+    ("外挿検知トップ", best_model_label(metrics, MODEL_LABELS, "ood_detection_auroc", higher_is_better=True)),
+]
+st.markdown(
+    "<div class='stat-grid model-score-grid'>"
+    + "".join(
+        f"<div class='stat-card'><div class='stat-label'>{label}</div><div class='stat-value'>{value}</div></div>"
+        for label, value in model_score_items
+    )
+    + "</div>",
+    unsafe_allow_html=True,
+)
+comparison_table = model_comparison_table(metrics, MODEL_LABELS)
+leaderboard, tendency_notes = st.columns([0.58, 0.42], gap="large")
+with leaderboard:
+    st.markdown("**性能リーダーボード**")
+    st.dataframe(
+        comparison_table[["総合順位", "モデル", "予測誤差", "方向正解率", "不確実性カバー", "外挿検知"]],
+        width="stretch",
+        hide_index=True,
+    )
+with tendency_notes:
+    st.markdown("**モデルのクセ**")
+    st.markdown(
+        "<div class='tendency-list'>"
+        + "".join(
+            "<div class='tendency-item'>"
+            f"<div class='tendency-name'>{escape(str(row['モデル']))}</div>"
+            f"<div class='tendency-copy'>{escape(str(row['傾向']))}</div>"
+            "</div>"
+            for _, row in comparison_table.iterrows()
+        )
+        + "</div>",
+        unsafe_allow_html=True,
+    )
+
+st.pyplot(plot_model_comparison(metrics), width="stretch")
+
+st.divider()
+st.subheader("条件変更を判断する")
 
 control_col, decision_col = st.columns([0.34, 0.66], gap="large")
 

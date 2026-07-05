@@ -1,7 +1,10 @@
 from src.ui_text import (
+    best_model_label,
     confidence_label,
     format_candidate_table,
     format_warning_message,
+    model_comparison_table,
+    model_tendency,
     risk_tone,
     top_decision_summary,
 )
@@ -64,3 +67,36 @@ def test_candidate_table_uses_japanese_columns():
         "合成データ上の正解",
     ]
     assert table.iloc[0]["期待変化"] == "+12.3 MPa"
+
+
+def test_model_comparison_table_summarizes_quality_and_tendency_in_japanese():
+    metrics = {
+        "Global delta linear": {
+            "rmse_delta_y": 14.2,
+            "mae_delta_y": 10.1,
+            "sign_accuracy": 0.76,
+            "interval_95_coverage": 0.94,
+            "ood_detection_auroc": 0.62,
+        },
+        "Local partial pooling": {
+            "rmse_delta_y": 9.8,
+            "mae_delta_y": 7.4,
+            "sign_accuracy": 0.84,
+            "interval_95_coverage": 0.91,
+            "ood_detection_auroc": 0.71,
+        },
+    }
+    labels = {
+        "Global delta linear": "全体・変化量線形",
+        "Local partial pooling": "局所線形 + 部分プーリング",
+    }
+
+    table = model_comparison_table(metrics, labels)
+
+    assert list(table.columns) == ["総合順位", "モデル", "予測誤差", "方向正解率", "不確実性カバー", "外挿検知", "傾向"]
+    assert table.iloc[0]["モデル"] == "局所線形 + 部分プーリング"
+    assert table.iloc[0]["予測誤差"] == "9.8 MPa"
+    assert table.iloc[0]["方向正解率"] == "84%"
+    assert "低データ条件" in table.iloc[0]["傾向"]
+    assert best_model_label(metrics, labels, "sign_accuracy", higher_is_better=True) == "局所線形 + 部分プーリング"
+    assert "不確実性" in model_tendency("GP delta")
